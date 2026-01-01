@@ -9,7 +9,6 @@ blueprint:
     - Mode Hors Gel prioritaire
     - Cycle configurable: 30s (test) ou 5 min (prod)
   domain: automation
-  source_url: ""
 
   input:
     fil_pilote_switch:
@@ -84,134 +83,13 @@ blueprint:
 mode: restart
 
 trigger:
-  # Tick test: toutes les 30 secondes
   - platform: time_pattern
     seconds: "/30"
     id: tick_30s
 
-  # Tick prod: toutes les 5 minutes
   - platform: time_pattern
     minutes: "/5"
     id: tick_5m
 
-  # Réaction immédiate si paramètres changent
   - platform: state
-    entity_id: !input consigne
-    id: param_change
-  - platform: state
-    entity_id: !input mode_chauffage
-    id: param_change
-
-variables:
-  fil_pilote: !input fil_pilote_switch
-  thermo: !input thermometre
-  mode: !input mode_chauffage
-  consigne_ent: !input consigne
-
-  cycle_choice: !input cycle
-  cycle_s: >-
-    {% if cycle_choice == '30 s' %}
-      30
-    {% else %}
-      300
-    {% endif %}
-
-  coeff: !input coeff
-  deadband: !input deadband
-  securite_duty: !input securite_duty
-
-  consigne: "{{ states(consigne_ent) | float(0) }}"
-  temperature_str: "{{ states(thermo) }}"
-  temperature: "{{ temperature_str | float(0) }}"
-
-  # erreur = température - consigne (négatif => trop froid)
-  erreur: "{{ temperature - consigne }}"
-  abs_erreur: "{{ erreur | abs }}"
-
-  # duty_raw = proportion théorique
-  duty_raw: "{{ (-erreur) * (coeff | float(1)) }}"
-
-  # duty = zone morte + clamp 0..1
-  duty: >-
-    {% if temperature_str in ['unknown','unavailable','none',''] %}
-      none
-    {% elif abs_erreur <= (deadband | float(0)) %}
-      0
-    {% else %}
-      {{ [ [ duty_raw, 0 ] | max, 1 ] | min }}
-    {% endif %}
-
-  # Sécurité : si capteur KO => chauffe X%
-  securite_frac: "{{ (securite_duty | float(50)) / 100 }}"
-  chauffe_s: >-
-    {% if duty is none %}
-      {{ (cycle_s * securite_frac) | round(0) | int }}
-    {% else %}
-      {{ (cycle_s * (duty | float(0))) | round(0) | int }}
-    {% endif %}
-  repos_s: "{{ cycle_s - chauffe_s }}"
-
-action:
-  # =========================================================
-  # FILTRE DU TRIGGER SELON LE CYCLE CHOISI (robuste, sans !input dans template)
-  # =========================================================
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ trigger.id == 'tick_30s' and cycle_choice != '30 s' }}"
-        sequence:
-          - stop: "Cycle réglé sur 5 min : on ignore le tick 30s."
-      - conditions:
-          - condition: template
-            value_template: "{{ trigger.id == 'tick_5m' and cycle_choice != '5 min' }}"
-        sequence:
-          - stop: "Cycle réglé sur 30s : on ignore le tick 5 min."
-
-  # =========================================================
-  # PRIORITÉ 1 : MODE HORS GEL
-  # =========================================================
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ is_state(mode, 'Hors Gel') }}"
-        sequence:
-          - service: switch.turn_on
-            target:
-              entity_id: "{{ fil_pilote }}"
-          - stop: "Mode Hors Gel actif."
-
-  # =========================================================
-  # PWM (chauffe_s / repos_s)
-  # =========================================================
-  - choose:
-      # 0% chauffe
-      - conditions:
-          - condition: template
-            value_template: "{{ chauffe_s <= 0 }}"
-        sequence:
-          - service: switch.turn_on
-            target:
-              entity_id: "{{ fil_pilote }}"
-
-      # 100% chauffe
-      - conditions:
-          - condition: template
-            value_template: "{{ chauffe_s >= cycle_s }}"
-        sequence:
-          - service: switch.turn_off
-            target:
-              entity_id: "{{ fil_pilote }}"
-
-    default:
-      # OFF = chauffe
-      - service: switch.turn_off
-        target:
-          entity_id: "{{ fil_pilote }}"
-      - delay:
-          seconds: "{{ chauffe_s }}"
-      # ON = hors-gel / arrêt
-      - service: switch.turn_on
-        target:
-          entity_id: "{{ fil_pilote }}"
-      - delay:
-          seconds: "{{ repos_s }}"
+    entity_id_
