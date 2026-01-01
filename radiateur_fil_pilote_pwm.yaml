@@ -1,13 +1,13 @@
 blueprint:
-  name: "Radiateur fil pilote - Régulation PWM (cycle 30s ou 5 min) + zone morte + sécurité"
+  name: "Radiateur fil pilote - Régulation PWM (tick 30s, cycle 30s ou 5 min) + zone morte + sécurité"
   description: >
-    Régulation temporelle (PWM).
+    Régulation PWM temporelle avec un SEUL trigger toutes les 30 secondes.
+    - Cycle configurable : 30s (test) ou 5 min (prod) via filtrage interne
     - Relais OFF = chauffe (Confort)
     - Relais ON  = hors-gel / arrêt
     - Zone morte (deadband)
     - Capteur indisponible => chauffe X% (défaut 50%)
     - Mode Hors Gel prioritaire
-    - Cycle configurable: 30s (test) ou 5 min (prod)
   domain: automation
 
   input:
@@ -83,14 +83,12 @@ blueprint:
 mode: restart
 
 trigger:
+  # Tick unique : toutes les 30 secondes
   - platform: time_pattern
     seconds: "/30"
-    id: tick_30s
+    id: tick
 
-  - platform: time_pattern
-    minutes: "/5"
-    id: tick_5m
-
+  # Recalcul immédiat si paramètres changent
   - platform: state
     entity_id: !input consigne
     id: param_change
@@ -146,15 +144,18 @@ variables:
   repos_s: "{{ cycle_s - chauffe_s }}"
 
 condition:
+  # Filtrage interne :
+  # - en mode 30s : on agit à chaque tick
+  # - en mode 5 min : on agit seulement quand minute % 5 == 0 (et dans les 30 premières secondes)
   - condition: template
     value_template: >-
       {% if trigger.platform != 'time_pattern' %}
         true
       {% else %}
         {% if cycle_choice == '30 s' %}
-          {{ (trigger.seconds | default(0) | int) == 30 }}
+          true
         {% else %}
-          {{ (trigger.minutes | default(0) | int) == 5 }}
+          {{ (now().minute % 5) == 0 and (now().second < 30) }}
         {% endif %}
       {% endif %}
 
