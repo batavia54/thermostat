@@ -1,0 +1,77 @@
+blueprint:
+  name: "Radiateur fil pilote - Mise à jour consigne selon mode (Confort / Hors Gel)"
+  description: >
+    Met à jour la consigne (input_number) en fonction du mode (input_select) :
+    - Hors Gel  => consigne = 0°C
+    - Confort   => consigne = valeur de la température confort
+    Déclenchement sur changement de mode, changement de température confort, et au démarrage de Home Assistant.
+  domain: automation
+
+  input:
+    mode_chauffage:
+      name: "Mode chauffage (input_select)"
+      description: "Doit contenir les valeurs 'Confort' et 'Hors Gel'."
+      selector:
+        entity:
+          domain: input_select
+
+    temperature_confort:
+      name: "Température confort (input_number)"
+      selector:
+        entity:
+          domain: input_number
+
+    temperature_consigne:
+      name: "Température consigne (input_number)"
+      selector:
+        entity:
+          domain: input_number
+
+    consigne_hors_gel:
+      name: "Consigne Hors Gel (°C)"
+      description: "Valeur de consigne appliquée en mode Hors Gel."
+      default: 0
+      selector:
+        number:
+          min: -10
+          max: 10
+          step: 0.5
+          mode: box
+
+mode: single
+
+trigger:
+  - platform: state
+    entity_id: !input mode_chauffage
+  - platform: state
+    entity_id: !input temperature_confort
+  - platform: homeassistant
+    event: start
+
+variables:
+  mode_ent: !input mode_chauffage
+  confort_ent: !input temperature_confort
+  consigne_ent: !input temperature_consigne
+  consigne_hg: !input consigne_hors_gel
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ is_state(mode_ent, 'Hors Gel') }}"
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: "{{ consigne_ent }}"
+            data:
+              value: "{{ consigne_hg | float(0) }}"
+
+      - conditions:
+          - condition: template
+            value_template: "{{ is_state(mode_ent, 'Confort') }}"
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: "{{ consigne_ent }}"
+            data:
+              value: "{{ states(confort_ent) | float(0) }}"
