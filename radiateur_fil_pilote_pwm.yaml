@@ -92,4 +92,110 @@ trigger:
     id: tick_5m
 
   - platform: state
-    entity_id_
+    entity_id: !input consigne
+    id: param_change
+
+  - platform: state
+    entity_id: !input mode_chauffage
+    id: param_change
+
+variables:
+  fil_pilote: !input fil_pilote_switch
+  thermo: !input thermometre
+  mode_ent: !input mode_chauffage
+  consigne_ent: !input consigne
+
+  cycle_choice: !input cycle
+  cycle_s: >-
+    {% if cycle_choice == '30 s' %}
+      30
+    {% else %}
+      300
+    {% endif %}
+
+  coeff: !input coeff
+  deadband: !input deadband
+  securite_duty: !input securite_duty
+
+  consigne: "{{ states(consigne_ent) | float(0) }}"
+  temperature_str: "{{ states(thermo) }}"
+  temperature: "{{ temperature_str | float(0) }}"
+
+  erreur: "{{ temperature - consigne }}"
+  abs_erreur: "{{ erreur | abs }}"
+
+  duty_raw: "{{ (-erreur) * (coeff | float(1)) }}"
+
+  duty: >-
+    {% if temperature_str in ['unknown','unavailable','none',''] %}
+      none
+    {% elif abs_erreur <= (deadband | float(0)) %}
+      0
+    {% else %}
+      {{ [ [ duty_raw, 0 ] | max, 1 ] | min }}
+    {% endif %}
+
+  securite_frac: "{{ (securite_duty | float(50)) / 100 }}"
+  chauffe_s: >-
+    {% if duty is none %}
+      {{ (cycle_s * securite_frac) | round(0) | int }}
+    {% else %}
+      {{ (cycle_s * (duty | float(0))) | round(0) | int }}
+    {% endif %}
+
+  repos_s: "{{ cycle_s - chauffe_s }}"
+
+action:
+  # Filtre de tick selon le cycle choisi
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'tick_30s' and cycle_choice != '30 s' }}"
+        sequence:
+          - stop: "Cycle sur 5 min : tick 30s ignoré."
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'tick_5m' and cycle_choice != '5 min' }}"
+        sequence:
+          - stop: "Cycle sur 30s : tick 5 min ignoré."
+
+  # Mode Hors Gel prioritaire
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ is_state(mode_ent, 'Hors Gel') }}"
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: "{{ fil_pilote }}"
+          - stop: "Mode Hors Gel actif."
+
+  # PWM
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ chauffe_s <= 0 }}"
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: "{{ fil_pilote }}"
+
+      - conditions:
+          - condition: template
+            value_template: "{{ chauffe_s >= cycle_s }}"
+        sequence:
+          - service: switch.turn_off
+            target:
+              entity_id: "{{ fil_pilote }}"
+
+    default:
+      - service: switch.turn_off
+        target:
+          entity_id: "{{ fil_pilote }}"
+      - delay:
+          seconds: "{{ chauffe_s }}"
+      - service: switch.turn_on
+        target:
+          entity_id: "{{ fil_pilote }}"
+      - delay:
+          seconds: "{{ repos_s }}"
