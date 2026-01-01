@@ -145,20 +145,20 @@ variables:
 
   repos_s: "{{ cycle_s - chauffe_s }}"
 
-action:
-  # Filtre de tick selon le cycle choisi
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ trigger.id == 'tick_30s' and cycle_choice != '30 s' }}"
-        sequence:
-          - stop: "Cycle sur 5 min : tick 30s ignoré."
-      - conditions:
-          - condition: template
-            value_template: "{{ trigger.id == 'tick_5m' and cycle_choice != '5 min' }}"
-        sequence:
-          - stop: "Cycle sur 30s : tick 5 min ignoré."
+condition:
+  - condition: template
+    value_template: >-
+      {% if trigger.platform != 'time_pattern' %}
+        true
+      {% else %}
+        {% if cycle_choice == '30 s' %}
+          {{ (trigger.seconds | default(0) | int) == 30 }}
+        {% else %}
+          {{ (trigger.minutes | default(0) | int) == 5 }}
+        {% endif %}
+      {% endif %}
 
+action:
   # Mode Hors Gel prioritaire
   - choose:
       - conditions:
